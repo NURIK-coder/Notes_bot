@@ -6,13 +6,12 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKey
     InlineKeyboardButton, CallbackQuery
 from aiogram import html
 
-from buttons.inline import page, update_btn
-from buttons.reply import note_list_create_btn
-from states import NotesState, NoteUpdateState
-
+from app.notes.models import Note
+from app.buttons.inline import page, update_btn
+from app.buttons.reply import note_list_create_btn
+from app.states import NotesState, NoteUpdateState
+import io
 router = Router()
-
-num = 2
 
 
 @router.message(CommandStart())
@@ -22,7 +21,7 @@ async def start_handler(message: Message):
 
 @router.message(F.text.endswith('list'))
 async def notes_handler(message: Message, state: FSMContext):
-    notes = requests.get('http://127.0.0.1:8000/notes/list/?page=1').json()
+    notes = requests.get('http://127.0.0.1:8000/notes/list/').json()
     text = ''
     for i in notes['results']:
         text += f'''
@@ -32,13 +31,20 @@ Description: {i['description']}
 -------------------------------------------'''
     await state.update_data(notes=notes['results'])
     await message.answer(text, reply_markup=page)
-
+    pg = 1
+    await state.update_data(page=pg)
     await state.set_state(NotesState.note_id)
 
 
 @router.callback_query(F.data == 'next')
-async def next_page(call: CallbackQuery):
-    data = requests.get('http://127.0.0.1:8000/notes/list/?page=2').json()
+async def next_page(call: CallbackQuery, state: FSMContext):
+    dt = await state.get_data()
+    get_page = dt['page']
+    get_page += 1
+    data = requests.get(f'http://127.0.0.1:8000/notes/list/?page={get_page}').json()
+
+    await state.update_data(page=get_page)
+
     # print(data)
     text = ''
     for i in data['results']:
@@ -53,25 +59,30 @@ Description: {i['description']}
 
 
 @router.callback_query(F.data == 'previous')
-async def previous_page(call: CallbackQuery):
-    data = requests.get('http://127.0.0.1:8000/notes/list/?page=1').json()
-    print(data)
-    if data['previous'] == None:
+async def previous_page(call: CallbackQuery, state: FSMContext):
+    dt = await state.get_data()
+    pg = dt['page']
+    if pg <= 1:
         await call.message.answer('This is the first page!')
-    text = ''
-    for i in data['results']:
-        text += f"""
-ID: {i['id']}
-Title: {i['title']}
-Description: {i['description']}
--------------------------------------------
-    """
-    await call.message.answer(text, reply_markup=page)
+    pg -= 1
 
+    # data = requests.get(f'http://127.0.0.1:8000/notes/list/?page={pg}').json()
+    notes = Note.get_all()
+    await state.update_data(page=pg)
+    # text = ''
+#     for i in data['results']:
+#         text += f"""
+# ID: {i['id']}
+# Title: {i['title']}
+# Description: {i['description']}
+# -------------------------------------------
+#     """
+    await call.message.answer(notes, reply_markup=page)
 
-
-
-
+@router.message(F.text.endswith('create'))
+async def note_create_handler(message: Message, state: FSMContext):
+    await message.answer('The title of the Note:', reply_markup=ReplyKeyboardRemove())
+    await state.set_state(NotesState.title)
 @router.message(NotesState.title)
 async def title(message: Message, state: FSMContext):
     title = message.text
@@ -87,13 +98,14 @@ async def description(message: Message, state: FSMContext):
     await state.update_data(description=description)
 
     dt = await state.get_data()
-    body = {
-        'title': dt['title'],
-        'description': dt['description']
-    }
+    # body = {
+    #     'title': dt['title'],
+    #     'description': dt['description']
+    # }
 
-    requests.post('http://127.0.0.1:8000/notes/create/', json=body)
+    await Note.create(title=dt['title'], content=dt['description'])
     await message.answer('Success!')
+    await state.clear()
 
 
 @router.message(NotesState.note_id)
@@ -114,16 +126,12 @@ Description: {data['description']}
     await state.set_state(NotesState.note_id)
 
 
-@router.message(F.text.endswith('create'))
-async def note_create_handler(message: Message, state: FSMContext):
-    await message.answer('The title of the Note:', reply_markup=ReplyKeyboardRemove())
-    await state.set_state(NotesState.title)
 
 @router.callback_query(F.data == 'updt')
 async def update_note(call: CallbackQuery, state: FSMContext):
     note_data = await state.get_data()
     note_id = note_data['note_id']
-    requests.patch(f'http://127.0.0.1:8000/notes/update/{note_id}', json=)
+    requests.patch(f'http://127.0.0.1:8000/notes/update/{note_id}')
     await call.message.answer('Note title: ')
     await state.set_state(NoteUpdateState.title)
 
@@ -146,28 +154,46 @@ async def update_status(message:Message, state:FSMContext):
     if message.text == 'Done':
         status = True
         await state.update_data(status=status)
-        await message.answer("Note Photo(if you want to change it enter 'Yes')")
+        await message.answer("Note Photo(if you want to change it send photo")
         await state.set_state(NoteUpdateState.photo)
     else:
-        await message.answer("Note Photo(if you want to change it enter 'Yes'):")
+        await message.answer("Note Photo(if you want to change it send photo:")
         await state.set_state(NoteUpdateState.photo)
 
 
 @router.message(NoteUpdateState.photo)
 async def photo(message: Message, state: FSMContext):
-    photo = message.photo[-1]
-    photo_tg_file = await message.bot.get_file(file_id=photo.file_id)
-    buffered_file = io.BytesIO()
-    await message.bot.download_file(file_path=photo_tg_file.file_path, destination=buffered_file)
-    filename = photo_tg_file.file_path.split('/')[1]
-    files = {
-        'photo': buffered_file.read()
-    }
-    buffered_file.seek(0)
     dt = await state.get_data()
+    note_id = dt['note_id']
+    if message.photo:
+        photo = message.photo[-1]
+        photo_tg_file = await message.bot.get_file(file_id=photo.file_id)
+        buffered_file = io.BytesIO()
+        await message.bot.download_file(file_path=photo_tg_file.file_path, destination=buffered_file)
+        filename = photo_tg_file.file_path.split('/')[1]
+        files = {
+            'photo': buffered_file.read()
+        }
+        buffered_file.seek(0)
 
-    requests.post('http://127.0.0.1:8000/notes/create/', files=files, data=dt)
+        requests.patch(f'http://127.0.0.1:8000/notes/update/{note_id}', files=files, data=dt)
+        await message.answer('Success!')
+    else:
+        requests.patch(f'http://127.0.0.1:8000/notes/update/{note_id}', data=dt)
+        await message.answer('Success!')
 
-    # send_buffered_file = BufferedInputFile(buffered_file.read(), filename=filename)
 
-    await message.answer('Success!')
+######################################
+
+
+# @router.message(Command('create'))
+# async def create_note(message:Message):
+#     note = await Note.create(title='first', content='First content')
+#     print(note.id, note.title, note.content)
+#     await message.answer('Note has been created!')
+
+# @router.message(Command('notes'))
+# async def get_notes(message:Message):
+#     notes = await Note.get_all()
+#     print(notes)
+#     # await message.answer()

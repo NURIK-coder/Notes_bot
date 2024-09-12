@@ -6,6 +6,7 @@ class NotesState(StatesGroup):
     title = State()
     description = State()
     photo = State()
+    page=State()
 class NoteUpdateState(StatesGroup):
     title = State()
     description = State()

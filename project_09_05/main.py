@@ -8,7 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 
-from handlers import router as handler_router
+from app.handlers import router as handler_router
 
 load_dotenv()
 
@@ -26,6 +26,7 @@ async def main():
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    # logging.basicConfig(level=logging.INFO, filename='logs.log')
     asyncio.run(main())
 
 
