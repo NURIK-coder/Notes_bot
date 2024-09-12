@@ -13,6 +13,7 @@ from states import NotesState, NoteUpdateState
 router = Router()
 
 
+
 @router.message(CommandStart())
 async def start_handler(message: Message):
     await message.answer(f'Hello, {message.from_user.full_name}', reply_markup=note_list_create_btn)
