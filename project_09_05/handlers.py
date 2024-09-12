@@ -12,6 +12,7 @@ from states import NotesState, NoteUpdateState
 
 router = Router()
 
+num = 2
 
 
 @router.message(CommandStart())
