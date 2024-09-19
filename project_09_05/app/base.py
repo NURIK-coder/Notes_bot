@@ -60,4 +60,10 @@ class Base(DeclarativeBase):
 
             results = await session.execute(query)
             return results.scalars().all()
+    @classmethod
+    async def detail(cls, record_id: int):
+        async with async_session_maker()as session:
+            query = select(cls).filter_by(id=record_id)
+            result = await session.execute(query)
+            return result.scalar_one()
 

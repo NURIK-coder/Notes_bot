@@ -8,6 +8,7 @@ from alembic import context
 from app.database import database_url
 from app.base import Base
 
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -34,7 +35,7 @@ target_metadata = Base.metadata
 
 ##3
 from app.notes.models import *
-
+from app.users.models import *
 
 
 
